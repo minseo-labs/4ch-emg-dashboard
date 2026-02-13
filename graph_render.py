@@ -1,0 +1,198 @@
+import numpy as np
+import pyqtgraph as pg
+
+from config import N_CH, CH_COLORS, CH_OFFSET
+
+
+def render(win):
+    if not win.is_running or win.sample_count == 0:
+        return
+    is_fill_mode = win.rb_fill.isChecked()  # ui에서 선택 모드 확인(line/bar)
+    
+    # Ring Buffer 구조에서 현재 데이터가 기록될 위치(ptr)를 안전하게 계산 
+    safe_ptr = win.ptr % win.max_display
+    unified_x_ms = win.x_axis[safe_ptr]
+
+    update_raw_graph(win, is_fill_mode, unified_x_ms)
+    update_diag_vector(win)
+    update_power_info(win)
+
+BAR_HEIGHT_REF_RAW = 100.0   # bar 모드에서 신호 폭이 100 벌어지면 100만큼 꽉 채운다 
+NO_SIGNAL_VARIATION_RAW = 1.0   # 신호 없음 판단 기준 
+LINE_HEIGHT_PX = 1.5  # 신호 없는 구간 선의 두께 
+
+
+def update_raw_graph(win, is_fill_mode, unified_x_ms):
+    step = 30
+    gap_range = 5
+
+    for i in range(N_CH):
+        scaler = win.scale_manager.scalers[i]
+        _, allowed_half_height = win.scale_manager._data_range_and_half_height(i)
+        max_bar_pixels = 2.0 * allowed_half_height
+
+        # 구간별(Step) 데이터 처리 (막대의 높이 결정)
+        for chunk_start in range(0, win.max_display, step):
+            chunk = win.raw_np_buf[i, chunk_start : chunk_start + step]
+
+            if chunk.size > 0:
+                ch_max = np.nanmax(chunk)
+                ch_min = np.nanmin(chunk)
+                # 구간 내 변화 폭 작은 경우 
+                if (ch_max - ch_min) < NO_SIGNAL_VARIATION_RAW:
+                    new_h = LINE_HEIGHT_PX
+                else:
+                    # 변화폭을 기준값에 대비해 비율로 변환 
+                    bar_height_raw = ch_max - ch_min
+                    ratio = min(bar_height_raw / BAR_HEIGHT_REF_RAW, 1.0)  # 기준값(힘이 몇프로인지)
+                    new_h = max(ratio * max_bar_pixels, LINE_HEIGHT_PX)
+
+                win.height_buf[i, chunk_start : chunk_start + step] = new_h # 계산된 높이들 (ui 업데이트용)
+
+        # 기준선 고정 (막대를 어디에 세울 것인가)
+        base_offset = (N_CH - 1 - i) * CH_OFFSET + (CH_OFFSET / 2)
+
+        # 모드 선택 
+        if is_fill_mode:
+
+            # bar 모드 선택 시 line은 그려지지 않음 
+            win.past_lines[i].setVisible(False)
+            win.raw_lines[i].setVisible(False)
+
+            # step 간격으로 인덱스 추출 (막대 사이의 공간)
+            sampled_indices = np.arange(0, win.max_display, step)
+            display_heights = win.height_buf[i, sampled_indices].copy()
+
+            gap_start = (win.ptr // step)   # 현재 막대 위치 계산 
+
+            # 실시간 갱신 
+            if not win.is_buf_full:
+                display_heights[gap_start:] = 0   # 버퍼가 처음 채워지는 중인 경우 0
+            else:
+                for g in range(gap_range):
+                    display_heights[(gap_start + g) % len(display_heights)] = 0    # 버퍼가 다시 순환 중인 경우 gap_range 만큼 지움 
+            
+            win.bar_items[i].setOpts(
+                x=win.x_axis[sampled_indices],
+                height=display_heights,
+                y0=base_offset - (display_heights / 2),   # 막대 시작점 
+                width=20,
+            )
+            
+            # 막대그래프 보이도록 
+            win.bar_items[i].setVisible(True)  
+
+            # 가장 최신 좌표 (데이터 찍히는 곳)
+            last_x = win.x_axis[(win.ptr - 1) % win.max_display] if win.sample_count > 0 else unified_x_ms
+            
+            # 커서 배치 
+            win.cursor_rects[i].setData(pos=[(last_x, base_offset)])
+
+        # line 그래프 모드 
+        else:
+            win.bar_items[i].setVisible(False)
+
+            # 버퍼가 다 안찼을 경우 
+            if not win.is_buf_full:
+                win.past_lines[i].setData([], [])
+                win.past_lines[i].setVisible(False)
+
+                # 데이터 유무 확인 
+                if win.ptr <= 0:
+                    x, y = np.array([]), np.array([])
+
+                # 0 ~ ptr 까지의 좌표 가져옴 
+                else:
+                    x = win.x_axis[: win.ptr]
+                    y = win.scale_manager.get_scaled_array(i, win.raw_np_buf[i, : win.ptr])
+
+            # 버퍼가 한바퀴 이상 돌았을 경우 
+            else:
+                # ptr ~ 끝 
+                x_past = win.x_axis[win.ptr :]
+                y_past = win.scale_manager.get_scaled_array(
+                    i, win.raw_np_buf[i, win.ptr :]
+                )
+                win.past_lines[i].setData(x_past, y_past)
+                win.past_lines[i].setVisible(True)
+
+                # 0 ~ ptr 
+                if win.ptr <= 0:
+                    x, y = np.array([]), np.array([])
+                else:
+                    x = win.x_axis[: win.ptr]
+                    y = win.scale_manager.get_scaled_array(
+                        i, win.raw_np_buf[i, : win.ptr]
+                    )
+            # 데이터를 선 객체에 주입 
+            win.raw_lines[i].setData(x, y)
+            win.raw_lines[i].setVisible(True)
+
+            # 커서 찍기 
+            if win.sample_count > 0:   # 데이터 있다면 
+
+                # 최신 위치 찾기 
+                prev_idx = (win.ptr - 1) % win.max_display
+                last_x = win.x_axis[prev_idx]
+
+                # 커서 높이 결정 
+                y_cursor = win.scale_manager.get_scaled_array(
+                    i, np.array([win.raw_np_buf[i, prev_idx]])
+                )[0]
+
+                win.cursor_rects[i].setData(pos=[(last_x, y_cursor)])
+            else:
+                win.cursor_rects[i].setData(pos=[])  # 데이터 없으면 커서 지움
+
+
+def update_diag_vector(win):
+    directions = [(-0.707, -0.707), (-0.707, 0.707), (0.707, 0.707), (0.707, -0.707)]
+    DATA_LEN = 100
+
+    for i in range(N_CH):
+        if win.ptr >= DATA_LEN:
+            diag_raw = win.raw_np_buf[i, win.ptr - DATA_LEN : win.ptr]
+        else:
+            diag_raw = (
+                np.concatenate(
+                    [win.raw_np_buf[i, -DATA_LEN + win.ptr :], win.raw_np_buf[i, : win.ptr]]
+                )
+                if win.is_buf_full
+                else win.raw_np_buf[i, : win.ptr]
+            )
+
+        if diag_raw.size < 2:
+            continue
+
+        scaler = win.scale_manager.scalers[i]
+        ratio = win.scale_manager.get_vector_intensity(i, win.last_amp[i])
+        denom = max(scaler.current_max - scaler.baseline, 30)
+        wave = (diag_raw - scaler.baseline) / denom
+        val = ratio * 1.4 * win.diag_plot_limit
+        if val < 2.0:
+            win.diag_lines[i].setData([], [])
+            continue
+
+        dx, dy = directions[i]
+        perp_x, perp_y = -dy, dx
+        t = np.linspace(0, val, len(diag_raw))
+        wave_amp = 15 * ratio * (t / (val + 1e-6))
+        res_x = (t * dx) + (perp_x * wave * wave_amp)
+        res_y = (t * dy) + (perp_y * wave * wave_amp)
+        res_x[0], res_y[0] = 0, 0
+        win.diag_lines[i].setData(res_x, res_y)
+        color = pg.mkColor(CH_COLORS[i])
+        color.setAlpha(int(np.clip(80 + (ratio * 175), 80, 255)))
+        win.diag_lines[i].setPen(pg.mkPen(color=color, width=1.5 + (ratio * 3.0)))
+
+
+def update_power_info(win):
+    amp_clamped = np.clip(win.last_amp, 0, 100)
+    avg_pwr = np.sum(win.last_amp) / 2.0
+    win.bar_item.setOpts(height=list(amp_clamped) + [np.clip(avg_pwr, 0, 100)])
+    win.lbl_rawnums.setText(
+        f"RAW: {win.last_raw}"
+    )
+    win.lbl_pwr.setText(
+        f"AMP: {[round(float(a), 1) for a in win.last_amp]}  AVG(Sum/2)={avg_pwr:.1f}"
+    )

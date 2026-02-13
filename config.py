@@ -1,0 +1,24 @@
+# [공통]
+N_CH = 4
+FPS = 30
+PLOT_SEC = 5.0
+
+# [시리얼/신호 처리]
+ENABLE_CSV_LOGGING = True
+BASE_SAMPLES = 5
+N_MULT_DEFAULT = 10
+
+# [RAW 그래프 스케일·레이아웃]
+CH_OFFSET = 100
+RAW_Y_MIN_INIT = 10
+RAW_Y_MAX_INIT = 100
+
+# [디자인 설정]
+RAW_LINE_WIDTH = 1.6
+COLOR_BG = "#121826"
+COLOR_CARD_BORDER = "#2a3550"
+COLOR_STATUS_CONNECTED = "#2ed573"
+COLOR_STATUS_DISCONNECTED = "#ff6b6b"
+
+CH_COLORS = ["#ff4757", "#ff9f43", "#2ed573", "#1e90ff"]
+SUM_BAR_COLOR = "#9fb3ff"
