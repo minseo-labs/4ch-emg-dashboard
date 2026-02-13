@@ -9,7 +9,7 @@ PyQt6 기반 **실시간 4채널 근전도(EMG) 데이터 시각화** 데스크�
 - **RAW 그래프**: 4채널 시계열 (Line 모드 / Bar 모드 전환)
 - **Diagonal Vector**: 채널별 대각선 방향 벡터 (관측 범위 대비 강도)
 - **PWR BARS**: 채널별·AVG 진폭을 **비율(0~100%)**로 표시
-- **CSV 로깅**: Raw/AMP/타임스탬프 저장 (옵션)
+- **CSV 로깅**: Raw/AMP/타임스탬프 저장
 - **Window Size**: 진폭 계산에 쓰는 샘플 수 조절
 
 ---
@@ -49,19 +49,9 @@ python main.py
 
 ---
 
-## 프로젝트 구조
+## 문서
 
-| 파일 | 역할 |
-|------|------|
-| `main.py` | 앱 진입점 |
-| `dashboard_ui.py` | 메인 윈도우, 패널 UI, 시리얼/타이머 연결 |
-| `graph_render.py` | RAW·대각선 벡터·PWR 그래프 렌더 |
-| `serial_worker.py` | 시리얼 수신, 파싱, 진폭 계산 |
-| `emg_scale.py` | 채널별 스케일·비율 계산 |
-| `config.py` | 채널 수, 색상, FPS 등 상수 |
-| `logger.py` | CSV 로깅 |
-
-**상세 구조·코드 흐름·동적 스케일링 설명** → [MODULES.md](MODULES.md)
+- **모듈 역할, 코드 흐름, 동적 스케일링** 등 개발자용 상세 내용 → [MODULES.md](MODULES.md)
 
 ---
 
