@@ -187,12 +187,18 @@ def update_diag_vector(win):
 
 
 def update_power_info(win):
-    amp_clamped = np.clip(win.last_amp, 0, 100)
-    avg_pwr = np.sum(win.last_amp) / 2.0
-    win.bar_item.setOpts(height=list(amp_clamped) + [np.clip(avg_pwr, 0, 100)])
+    # 채널별 관측 범위 대비 비율(0~1)로 계산 후 0~100% 막대 높이로 사용
+    ratios = np.array([
+        win.scale_manager.get_vector_intensity(i, win.last_amp[i])
+        for i in range(N_CH)
+    ])
+    height_pct = np.clip(ratios * 100.0, 0, 100)
+    avg_pct = float(np.mean(ratios) * 100.0)
+    avg_pct = np.clip(avg_pct, 0, 100)
+    win.bar_item.setOpts(height=list(height_pct) + [avg_pct])
     win.lbl_rawnums.setText(
         f"RAW: {win.last_raw}"
     )
     win.lbl_pwr.setText(
-        f"AMP: {[round(float(a), 1) for a in win.last_amp]}  AVG(Sum/2)={avg_pwr:.1f}"
+        f"AMP: {[round(float(a), 1) for a in win.last_amp]}  비율(%): {[round(float(h), 0) for h in height_pct]}  AVG={avg_pct:.0f}%"
     )
