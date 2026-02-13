@@ -8,6 +8,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from config import N_CH, BASE_SAMPLES, N_MULT_DEFAULT
 
 
+# 데이터 파싱 함수
 def parse_line_4ch(line: str):
     if not line: return None
     nums = re.findall(r'[-+]?\d*\.\d+|\d+', line)
@@ -15,6 +16,7 @@ def parse_line_4ch(line: str):
     return [float(v) for v in nums[-4:]]
 
 
+# 진폭 계산 함수
 def compute_amp_from_samples(sample_buf: deque):
     if not sample_buf or len(sample_buf) == 0:
         return np.zeros(4), np.array([])
@@ -23,6 +25,7 @@ def compute_amp_from_samples(sample_buf: deque):
     return amp, pkt
 
 
+# 시리얼 통신 전용 스레드 클래스
 class SerialWorker(QThread):
     # (원본데이터, 보정데이터, 진폭데이터)
     sig_sample = pyqtSignal(list, object) 
@@ -43,14 +46,16 @@ class SerialWorker(QThread):
         
         # 최적화: 진폭 계산 주기 관리
         self.calc_counter = 0
-        self.calc_interval = 5 # 5개 샘플마다 한 번씩 Amplitude 계산 (CPU 부하 감소)
+        self.calc_interval = 5          # 5개 샘플마다 한 번씩 Amplitude 계산 (CPU 부하 감소)
         self.last_amp = np.zeros(N_CH)
 
+    # 포트 설정 정보를 주입
     def configure(self, port: str, baud: int, n_mult: int):
         self._port = port
         self._baud = baud
         self.update_params(n_mult)
 
+    # 샘플링 윈도우 크기를 동적으로 변경
     def update_params(self, n_mult):
         self.n_samples = int(BASE_SAMPLES * n_mult)
         self.sample_buf = deque(maxlen=self.n_samples)

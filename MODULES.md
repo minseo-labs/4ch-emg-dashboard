@@ -24,6 +24,14 @@
 
 **실행:** `python main.py` (프로젝트 루트에서 실행). 시리얼 포트 선택 후 START로 수신 시작.
 
+### 시리얼 프로토콜 (프레임 23 bytes)
+
+| 구간 | 길이 | 설명 |
+|------|------|------|
+| 헤더 | 2 bytes | 프레임 식별 |
+| 데이터 | 20 bytes | 5×4 |
+| 체크섬 | 1 byte | XOR (헤더+데이터에 대한 XOR) |
+
 ---
 
 ## 성능 최적화 요약
@@ -138,8 +146,9 @@
 
 **역할:** 시리얼 수신 + 프로토콜 파싱 + 진폭 계산 + UI로 전달
 
-- **시리얼:** 지정 포트로 열고, `in_waiting` 기준으로 데이터 읽기, 줄 단위(`\n`)로 분리
-- **파싱:** `parse_line_4ch(line)` — 한 줄에서 숫자 추출, 마지막 4개를 float 리스트로 반환 (4ch 가정)
+- **프로토콜:** 23 bytes/프레임 (헤더 2 + 데이터 20 + 체크섬 1 XOR). 상세는 [시리얼 프로토콜](#시리얼-프로토콜-프레임-23-bytes) 참고.
+- **시리얼:** 지정 포트로 열고, `in_waiting` 기준으로 데이터 읽기 (줄 단위 또는 23바이트 프레임 단위 파싱)
+- **파싱:** `parse_line_4ch(line)` — 한 줄에서 숫자 추출, 마지막 4개를 float 리스트로 반환 (4ch 가정). 이진 23바이트 프레임 파싱은 프로토콜에 맞게 구현 가능.
 - **진폭:** `compute_amp_from_samples(sample_buf)` — 최근 N개 샘플의 채널별 (max−min)을 AMP로 계산
 - **윈도우:** `n_mult`로 `n_samples = BASE_SAMPLES * n_mult` 결정, `sample_buf`(deque)에 샘플 누적 후 `n_samples`개 모이면 AMP 계산
 - **시그널:** `sig_sample.emit(raw_vals, last_amp)` — UI에 raw·amp 전달, `sig_status` / `sig_error` — 연결 상태·에러
@@ -185,7 +194,7 @@ RAW 그래프의 "세로 위치", Bar 모드의 채널 밴드, 대각선 벡터�
 **역할:** CSV 로깅 (raw·amp·타임스탬프)
 
 - **CSVLogger:** 세션당 하나의 CSV 파일 (파일명: 날짜_시간_emg.csv)
-- **헤더:** Time(ms), Raw_CH0~3, Amp_CH0~3 (고정 4ch 가정; 채널 수 바뀌면 여기 수정)
+- **헤더:** Time(ms), Raw_CH0~3, Amp_CH0~3 (고정 4ch 가정)
 - **write_row(raw_vals, amp_vals, timestamp):** 한 행 버퍼에 추가, 버퍼가 차면 디스크에 flush
 - **flush / close:** 버퍼 비우기, 파일 닫기
 
@@ -219,9 +228,9 @@ RAW 그래프의 "세로 위치", Bar 모드의 채널 밴드, 대각선 벡터�
 main.py
   └─ QApplication 생성
   └─ EMGDashboard() 생성  ─────────────────────────────────────────┐
-  └─ window.show()                                                   │
+  └─ window.show()                                                 │
   └─ app.exec()  (이벤트 루프)                                       │
-                                                                     ▼
+                                                                    ▼
 dashboard_ui.py  __init__
   ├─ config / emg_scale / logger / serial_worker / graph_render import
   ├─ scale_manager = EMGScaleManager(n_channels=N_CH)
